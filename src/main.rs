@@ -55,13 +55,13 @@ struct Candidate {
     last_was_literal: bool,
 }
 
-struct ExpansionNode {
-    words: Vec<String>,
+struct ExpansionNode<'a> {
+    words: &'a[String],
     next_idx: usize,
     just_wrapped: bool,
 }
 
-impl ExpansionNode {
+impl<'a> ExpansionNode<'a> {
     pub fn value(&self) -> &str {
         &self.words[self.next_idx]
     }
@@ -85,7 +85,7 @@ impl ExpansionNode {
 // our positions.  Works much like incrementing a number: start from the right
 // and increment each digit.  If it overflows, keep moving left and incrementing
 // until you find a number that doesn't.
-fn print_expansions(writer: &mut dyn Write, number: &str, words: Vec<Vec<String>>) {
+fn print_expansions(writer: &mut dyn Write, number: &str, words: &[&[String]]) {
     let mut nodes: Vec<ExpansionNode> = words
         .into_iter()
         .map(|w| ExpansionNode {
@@ -228,6 +228,9 @@ fn main() {
     };
 
     let dictionary = load_dictionary(&words_file);
+    let mut words: Vec<&[String]> = Vec::new();
+
+    let digit_strings: Vec<Vec<String>> = (0..9).map(|digit| vec!(digit.to_string())).collect();
 
     for number in read_lines(&input_file) {
         let mut number_digits: Vec<u8> = Vec::with_capacity(32);
@@ -246,21 +249,21 @@ fn main() {
         let mut writer = BufWriter::new(stdout.lock());
 
         for m in MatchGenerator::new(&number_digits, &dictionary) {
-            let mut words: Vec<Vec<String>> = Vec::new();
+            words.clear();
 
             let mut last_idx = 0;
             for idx in 0..=number_digits.len() {
                 if (m.word_end_positions & (1 << idx)) != 0 {
                     let key = number_digits[last_idx..idx].to_vec();
-                    words.push(dictionary.get(&key).unwrap().clone());
+                    words.push(dictionary.get(&key).unwrap());
                     last_idx = idx;
                 } else if (m.digit_literal_positions & (1 << idx)) != 0 {
-                    words.push(vec![number_digits[idx].to_string()]);
+                    words.push(&digit_strings[number_digits[idx as usize] as usize]);
                     last_idx += 1;
                 }
             }
 
-            print_expansions(&mut writer, &number, words);
+            print_expansions(&mut writer, &number, &words);
         }
     }
 }
