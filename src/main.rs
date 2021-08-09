@@ -258,7 +258,7 @@ fn main() {
                     words.push(dictionary.get(&key).unwrap());
                     last_idx = idx;
                 } else if (m.digit_literal_positions & (1 << idx)) != 0 {
-                    words.push(&digit_strings[number_digits[idx as usize] as usize]);
+                    words.push(&digit_strings[number_digits[(idx - 1) as usize] as usize]);
                     last_idx += 1;
                 }
             }
