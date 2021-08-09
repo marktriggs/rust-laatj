@@ -47,15 +47,12 @@ fn word_key(s: &str) -> Vec<u8> {
         .collect()
 }
 
-#[derive(Clone)]
-enum PositionOrLiteral {
-    Position(usize),
-    Literal(u8),
-}
-
+#[derive(Debug)]
 struct Candidate {
     input_position: usize,
-    word_end_positions_found: Vec<PositionOrLiteral>,
+    word_end_positions: u64,
+    digit_literal_positions: u64,
+    last_was_literal: bool,
 }
 
 struct ExpansionNode {
@@ -142,7 +139,9 @@ impl<'a> MatchGenerator<'a> {
         // finished exploring.
         result.candidates.push_back(Candidate {
             input_position: 0,
-            word_end_positions_found: Vec::new(),
+            word_end_positions: 0,
+            digit_literal_positions: 0,
+            last_was_literal: false,
         });
 
         result
@@ -168,12 +167,12 @@ impl<'a> Iterator for MatchGenerator<'a> {
                     // matched a word
                     found_word = true;
 
-                    let mut positions = candidate.word_end_positions_found.clone();
-                    positions.push(PositionOrLiteral::Position(idx));
+                    let positions = candidate.word_end_positions | (1 << idx);
 
                     let next_candidate = Candidate {
                         input_position: idx,
-                        word_end_positions_found: positions,
+                        word_end_positions: positions,
+                        last_was_literal: false,
                         ..candidate
                     };
 
@@ -189,29 +188,23 @@ impl<'a> Iterator for MatchGenerator<'a> {
 
             // If we didn't find a word at `input_position`, we can add a digit here if we
             // didn't do that for the last position.
-            if !found_word {
-                let last_was_literal = matches!(candidate.word_end_positions_found.last(), Some(PositionOrLiteral::Literal(_)));
+            if !found_word && !candidate.last_was_literal {
+                // We have the option of inserting a literal digit
+                let digit_literal_positions = candidate.digit_literal_positions | (1 << (candidate.input_position + 1));
 
-                if !last_was_literal {
-                    // We have the option of inserting a literal digit
-                    let mut positions = candidate.word_end_positions_found;
-                    positions.push(PositionOrLiteral::Literal(
-                        self.number_digits[candidate.input_position],
-                    ));
+                let next_candidate = Candidate {
+                    input_position: candidate.input_position + 1,
+                    digit_literal_positions: digit_literal_positions,
+                    last_was_literal: true,
+                    ..candidate
+                };
 
-                    let next_candidate = Candidate {
-                        input_position: candidate.input_position + 1,
-                        word_end_positions_found: positions,
-                        ..candidate
-                    };
-
-                    if (candidate.input_position + 1) == self.number_digits.len() {
-                        // A complete match!
-                        return Some(next_candidate);
-                    } else {
-                        // Partial match... keep looking from here
-                        self.candidates.push_back(next_candidate);
-                    }
+                if (candidate.input_position + 1) == self.number_digits.len() {
+                    // A complete match!
+                    return Some(next_candidate);
+                } else {
+                    // Partial match... keep looking from here
+                    self.candidates.push_back(next_candidate);
                 }
             }
         }
@@ -256,17 +249,14 @@ fn main() {
             let mut words: Vec<Vec<String>> = Vec::new();
 
             let mut last_idx = 0;
-            for idx in m.word_end_positions_found {
-                match idx {
-                    PositionOrLiteral::Literal(l) => {
-                        words.push(vec![l.to_string()]);
-                        last_idx += 1;
-                    }
-                    PositionOrLiteral::Position(idx) => {
-                        let key = number_digits[last_idx..idx].to_vec();
-                        words.push(dictionary.get(&key).unwrap().clone());
-                        last_idx = idx;
-                    }
+            for idx in 0..=number_digits.len() {
+                if (m.word_end_positions & (1 << idx)) != 0 {
+                    let key = number_digits[last_idx..idx].to_vec();
+                    words.push(dictionary.get(&key).unwrap().clone());
+                    last_idx = idx;
+                } else if (m.digit_literal_positions & (1 << idx)) != 0 {
+                    words.push(vec![number_digits[idx].to_string()]);
+                    last_idx += 1;
                 }
             }
 
