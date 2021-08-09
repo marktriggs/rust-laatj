@@ -124,82 +124,102 @@ fn print_expansions(writer: &mut dyn Write, number: &str, words: Vec<Vec<String>
     }
 }
 
-fn generate_matches(number_digits: &[u8], dictionary: &Dictionary) -> Vec<Candidate> {
-    let mut complete_matches: Vec<Candidate> = Vec::new();
-    let mut candidates: VecDeque<Candidate> = VecDeque::new();
-
-    // Each candidate represents a portion of the input digits that we haven't
-    // finished exploring.
-    candidates.push_back(Candidate {
-        input_position: 0,
-        word_end_positions_found: Vec::new(),
-    });
-
-    while let Some(candidate) = candidates.pop_back() {
-        let start_idx = candidate.input_position;
-
-        let mut found_word = false;
-
-        // Scan the rest of the input for this candidate.  As we find words in our
-        // dictionary, record their end positions and add new Candidates to our search
-        // list.
-        for idx in (candidate.input_position + 1)..=number_digits.len() {
-            let candidate_key = &number_digits[start_idx..idx];
-
-            if let Some(_words) = dictionary.get(candidate_key) {
-                // matched a word
-                found_word = true;
-
-                let mut positions = candidate.word_end_positions_found.clone();
-                positions.push(PositionOrLiteral::Position(idx));
-
-                let next_candidate = Candidate {
-                    input_position: idx,
-                    word_end_positions_found: positions,
-                    ..candidate
-                };
-
-                if idx == number_digits.len() {
-                    // A complete match!
-                    complete_matches.push(next_candidate);
-                } else {
-                    // Partial match... keep looking from here
-                    candidates.push_back(next_candidate);
-                }
-            }
-        }
-
-        // If we didn't find a word at `input_position`, we can add a digit here if we
-        // didn't do that for the last position.
-        if !found_word {
-            let last_was_literal = matches!(candidate.word_end_positions_found.last(), Some(PositionOrLiteral::Literal(_)));
-
-            if !last_was_literal {
-                // We have the option of inserting a literal digit
-                let mut positions = candidate.word_end_positions_found;
-                positions.push(PositionOrLiteral::Literal(
-                    number_digits[candidate.input_position],
-                ));
-
-                let next_candidate = Candidate {
-                    input_position: candidate.input_position + 1,
-                    word_end_positions_found: positions,
-                    ..candidate
-                };
-
-                if (candidate.input_position + 1) == number_digits.len() {
-                    // A complete match!
-                    complete_matches.push(next_candidate);
-                } else {
-                    // Partial match... keep looking from here
-                    candidates.push_back(next_candidate);
-                }
-            }
-        }
-    }
-
-    complete_matches
+struct MatchGenerator<'a> {
+    number_digits: &'a [u8],
+    dictionary: &'a Dictionary,
+    candidates: VecDeque<Candidate>,
 }
+
+impl<'a> MatchGenerator<'a> {
+    fn new(number_digits: &'a [u8], dictionary: &'a Dictionary) -> MatchGenerator<'a> {
+        let mut result = MatchGenerator {
+            number_digits,
+            dictionary,
+            candidates: VecDeque::new(),
+        };
+
+        // Each candidate represents a portion of the input digits that we haven't
+        // finished exploring.
+        result.candidates.push_back(Candidate {
+            input_position: 0,
+            word_end_positions_found: Vec::new(),
+        });
+
+        result
+    }
+}
+
+impl<'a> Iterator for MatchGenerator<'a> {
+    type Item = Candidate;
+
+    fn next(&mut self) -> Option<Candidate> {
+        while let Some(candidate) = self.candidates.pop_back() {
+            let start_idx = candidate.input_position;
+
+            let mut found_word = false;
+
+            // Scan the rest of the input for this candidate.  As we find words in our
+            // dictionary, record their end positions and add new Candidates to our search
+            // list.
+            for idx in (candidate.input_position + 1)..=self.number_digits.len() {
+                let candidate_key = &self.number_digits[start_idx..idx];
+
+                if let Some(_words) = self.dictionary.get(candidate_key) {
+                    // matched a word
+                    found_word = true;
+
+                    let mut positions = candidate.word_end_positions_found.clone();
+                    positions.push(PositionOrLiteral::Position(idx));
+
+                    let next_candidate = Candidate {
+                        input_position: idx,
+                        word_end_positions_found: positions,
+                        ..candidate
+                    };
+
+                    if idx == self.number_digits.len() {
+                        // A complete match!
+                        return Some(next_candidate);
+                    } else {
+                        // Partial match... keep looking from here
+                        self.candidates.push_back(next_candidate);
+                    }
+                }
+            }
+
+            // If we didn't find a word at `input_position`, we can add a digit here if we
+            // didn't do that for the last position.
+            if !found_word {
+                let last_was_literal = matches!(candidate.word_end_positions_found.last(), Some(PositionOrLiteral::Literal(_)));
+
+                if !last_was_literal {
+                    // We have the option of inserting a literal digit
+                    let mut positions = candidate.word_end_positions_found;
+                    positions.push(PositionOrLiteral::Literal(
+                        self.number_digits[candidate.input_position],
+                    ));
+
+                    let next_candidate = Candidate {
+                        input_position: candidate.input_position + 1,
+                        word_end_positions_found: positions,
+                        ..candidate
+                    };
+
+                    if (candidate.input_position + 1) == self.number_digits.len() {
+                        // A complete match!
+                        return Some(next_candidate);
+                    } else {
+                        // Partial match... keep looking from here
+                        self.candidates.push_back(next_candidate);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+}
+
 
 fn main() {
     let mut args: Vec<_> = args().skip(1).collect();
@@ -229,12 +249,10 @@ fn main() {
             continue;
         }
 
-        let complete_matches = generate_matches(&number_digits, &dictionary);
-
         let stdout = io::stdout();
         let mut writer = BufWriter::new(stdout.lock());
 
-        for m in complete_matches {
+        for m in MatchGenerator::new(&number_digits, &dictionary) {
             let mut words: Vec<Vec<String>> = Vec::new();
 
             let mut last_idx = 0;
