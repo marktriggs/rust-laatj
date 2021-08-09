@@ -6,7 +6,9 @@ use std::env::args;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 
-type Dictionary = HashMap<Vec<u8>, Vec<String>>;
+type WordKey = u128;
+
+type Dictionary = HashMap<WordKey, Vec<String>>;
 
 // File to line iterator
 fn read_lines(file: &str) -> impl Iterator<Item = String> {
@@ -28,7 +30,7 @@ fn load_dictionary(path: &str) -> Dictionary {
 }
 
 // Map our string of letters into a Vec of their corresponding numbers.
-fn word_key(s: &str) -> Vec<u8> {
+fn word_key(s: &str) -> WordKey {
     s.chars()
         .map(|ch| match ch {
             'e' | 'E' => Some(0),
@@ -44,7 +46,7 @@ fn word_key(s: &str) -> Vec<u8> {
             _ => None,
         })
         .flatten()
-        .collect()
+        .fold(0, |acc, n| (acc * 10) + n)
 }
 
 #[derive(Clone)]
@@ -162,9 +164,9 @@ impl<'a> Iterator for MatchGenerator<'a> {
             // dictionary, record their end positions and add new Candidates to our search
             // list.
             for idx in (candidate.input_position + 1)..=self.number_digits.len() {
-                let candidate_key = &self.number_digits[start_idx..idx];
+                let candidate_key: u128 = self.number_digits[start_idx..idx].iter().fold(0u128, |acc, &n| (acc * 10) + (n as u128));
 
-                if let Some(_words) = self.dictionary.get(candidate_key) {
+                if let Some(_words) = self.dictionary.get(&candidate_key) {
                     // matched a word
                     found_word = true;
 
@@ -263,7 +265,9 @@ fn main() {
                         last_idx += 1;
                     }
                     PositionOrLiteral::Position(idx) => {
-                        let key = number_digits[last_idx..idx].to_vec();
+                        // let key = number_digits[last_idx..idx].to_vec();
+                        let key: u128 = number_digits[last_idx..idx].iter().fold(0u128, |acc, &n| (acc * 10) + (n as u128));
+
                         words.push(dictionary.get(&key).unwrap().clone());
                         last_idx = idx;
                     }
