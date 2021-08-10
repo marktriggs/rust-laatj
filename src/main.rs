@@ -100,15 +100,17 @@ fn print_expansions(writer: &mut dyn Write, number: &str, words: &[&[String]]) {
             break;
         }
 
-        writer.write_all(number.as_bytes()).expect("IO error");
-        writer.write_all(b":").expect("IO error");
+        if should_print(&nodes) {
+            writer.write_all(number.as_bytes()).expect("IO error");
+            writer.write_all(b":").expect("IO error");
 
-        for n in &nodes {
-            writer.write_all(b" ").expect("IO error");
-            writer.write_all(n.value().as_bytes()).expect("IO error");
+            for n in &nodes {
+                writer.write_all(b" ").expect("IO error");
+                writer.write_all(n.value().as_bytes()).expect("IO error");
+            }
+
+            writer.write_all(b"\n").expect("IO error");
         }
-
-        writer.write_all(b"\n").expect("IO error");
 
         for idx in (0..nodes.len()).rev() {
             let wrapped = nodes[idx].increment();
@@ -119,6 +121,44 @@ fn print_expansions(writer: &mut dyn Write, number: &str, words: &[&[String]]) {
             }
         }
     }
+}
+
+
+fn is_digit(value: &str) -> bool {
+    value.len() == 1 && value.as_bytes()[0] >= ('0' as u8) && value.as_bytes()[0] <= ('9' as u8)
+}
+
+fn should_print(nodes: &[ExpansionNode]) -> bool {
+    if nodes.is_empty() { return false; }
+    if nodes.len() == 1 { return true; }
+    let node = &nodes[0];
+
+    let (mut was_digit, mut acceptable_len) = {
+        let value = node.value();
+
+        if is_digit(value) {
+            (true, 0)
+        } else {
+            (false, value.len())
+        }
+    };
+
+    for node in nodes[1..].iter() {
+        let word = node.value();
+
+        if acceptable_len == 0 {
+            acceptable_len = word.len();
+        }
+        let is_digit = is_digit(word);
+
+        if was_digit == is_digit ||
+            ( !is_digit && word.len() != acceptable_len ) {
+                return false;
+            }
+        was_digit = is_digit;
+    }
+
+    true
 }
 
 struct MatchGenerator<'a> {
